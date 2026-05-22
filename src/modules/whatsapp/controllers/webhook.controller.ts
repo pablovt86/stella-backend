@@ -17,14 +17,19 @@ static verifyWebhook(req: Request, res: Response) {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
   
-  // ⚠️ Usamos el mismo token que configurarás en Meta
+  // Loggear todo lo que llega
+  console.log('🔍 Verificación de webhook recibida:');
+  console.log('   mode:', mode);
+  console.log('   token:', token);
+  console.log('   challenge:', challenge);
+  
   const verifyToken = 'peluqueria123';
   
   if (mode === 'subscribe' && token === verifyToken) {
     console.log('✅ Webhook verificado correctamente');
     res.status(200).send(challenge);
   } else {
-    console.log('❌ Error de verificación del webhook. Token recibido:', token);
+    console.log('❌ Falló la verificación. Token esperado:', verifyToken, 'Token recibido:', token);
     res.sendStatus(403);
   }
 }
