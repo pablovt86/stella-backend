@@ -1,0 +1,312 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==================== MULTI-TENANCY ====================
+model Tenant {
+  id        String       @id @default(cuid())
+  name      String
+  subdomain String       @unique
+  email     String       @unique
+  phone     String?
+  logo      String?
+  timezone  String       @default("America/Argentina/Buenos_Aires")
+  status    TenantStatus @default(ACTIVE)
+  settings  Json?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users         User[]
+  services      Service[]
+  appointments  Appointment[]
+  conversations Conversation[]
+  payments      Payment[]
+  WebhookConfig WebhookConfig?
+
+  @@index([subdomain])
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+  CANCELLED
+}
+
+// ==================== AUTENTICACIÓN ====================
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         UserRole  @default(STAFF)
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  refreshToken String?
+  lastLogin    DateTime?
+  isActive     Boolean   @default(true)
+  mfaEnabled   Boolean   @default(false)
+  mfaSecret    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions  Session[]
+  auditLogs AuditLog[]
+
+  @@unique([email, tenantId])
+  @@index([tenantId])
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  OWNER
+  MANAGER
+  STAFF
+  VIEWER
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  @@index([token])
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  tenantId  String
+  action    String
+  entity    String
+  entityId  String?
+  oldValues Json?
+  newValues Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([createdAt])
+}
+
+// ==================== NEGOCIO ====================
+model Service {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  price        Float
+  deposit      Float
+  durationMins Int      @default(30)
+  isActive     Boolean  @default(true)
+  category     String?
+  image        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  appointments Appointment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Appointment {
+  id            String            @id @default(cuid())
+  tenantId      String
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customerName  String
+  customerPhone String
+  customerEmail String?
+  serviceId     String
+  service       Service           @relation(fields: [serviceId], references: [id])
+  dateTime      DateTime
+  durationMins  Int
+  status        AppointmentStatus @default(PENDING)
+  depositAmount Float?
+  depositStatus DepositStatus     @default(NOT_PAID)
+  paymentId     String?
+  notes         String?
+  reminderSent  Boolean           @default(false)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  cancelledAt   DateTime?
+  holdExpiresAt DateTime?  // Cuándo expira la reserva temporal (15 min)
+  payment Payment?
+
+  @@unique([tenantId, dateTime, serviceId])
+  @@index([tenantId])
+  @@index([status])
+  @@index([dateTime])
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum DepositStatus {
+  NOT_PAID
+  PENDING
+  PAID
+  REFUNDED
+}
+
+// Tabla para análisis de sentimiento
+model SentimentAnalysis {
+  id             String   @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  messageId      String
+  messageText    String   @db.Text
+  
+  sentiment_score Float
+  sentiment_label String   // POSITIVE, NEUTRAL, NEGATIVE
+  sentiment_mood  String   // very_negative, negative, neutral, positive, very_positive
+  severity        String   // low, medium, high, critical
+  confidence      Float
+  
+  positive_words  Int      @default(0)
+  negative_words  Int      @default(0)
+  keywords        Json?    
+  language        String   @default("es")
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([conversationId])
+  @@index([sentiment_score])
+  @@index([severity])
+  @@index([createdAt])
+}
+
+// ==================== PAGOS ====================
+model Payment {
+  id                String          @id @default(cuid())
+  tenantId          String
+  tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointmentId     String          @unique
+  appointment       Appointment     @relation(fields: [appointmentId], references: [id])
+  amount            Float
+  type              PaymentType     @default(DEPOSIT)
+  status            PaymentStatus   @default(PENDING)
+  provider          PaymentProvider
+  providerPaymentId String
+  metadata          Json?
+  receiptUrl        String?
+  refundedAt        DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([providerPaymentId])
+}
+
+enum PaymentType {
+  DEPOSIT
+  FULL
+  REFUND
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentProvider {
+  MERCADOPAGO
+  STRIPE
+  PAYPAL
+}
+
+// ==================== CHATBOT ====================
+model Conversation {
+  id            String    @id @default(cuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channel       Channel
+  externalId    String
+  customerName  String
+  customerPhone String?
+  state         ChatState @default(WELCOME)
+  context       Json?
+  lastMessageAt DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  messages Message[]
+  sentimentAnalyses SentimentAnalysis[]
+  @@unique([tenantId, channel, externalId])
+  @@index([tenantId, state])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction      Direction    @default(INBOUND)
+  content        String
+  sentiment      Json?
+  intent         String?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+enum Channel {
+  WHATSAPP
+  TELEGRAM
+  WEBCHAT
+  INSTAGRAM
+  FACEBOOK
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+}
+
+enum ChatState {
+  WELCOME
+  SELECTING_SERVICE
+  SELECTING_DATE
+  SELECTING_TIME
+  CONFIRMING_APPOINTMENT
+  AWAITING_PAYMENT
+  COMPLETED
+  SUPPORT
+}
+
+// ==================== CONFIGURACIÓN ====================
+model WebhookConfig {
+  id            String   @id @default(cuid())
+  tenantId      String   @unique
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  whatsappToken String?
+  telegramToken String?
+  webhookSecret String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

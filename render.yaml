@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: peluqueria-bot-backend
+    runtime: node
+    repo:  https://github.com/pablovt86/stella-studio-web.git # 👈 CAMBIALO POR EL TUYO
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node dist/server.js # O el comando que uses para correr el backend compilado
+    envVars:
+      - key: DATABASE_URL
+        sync: false  # Esto significa que la vas a llenar a mano en el panel de Render
+      - key: DIRECT_URL
+        sync: false
+      - key: PORT
+        value: 3000
+    healthCheckPath: /health

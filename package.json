@@ -1,0 +1,48 @@
+{
+  "name": "peluqueria-bot-profesional",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "@xenova/transformers": "^2.17.2",
+    "axios": "^1.16.1",
+    "bcrypt": "^6.0.0",
+    "bull": "^4.16.5",
+    "compression": "^1.8.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "franc": "^6.2.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mercadopago": "^2.12.1",
+    "morgan": "^1.10.1",
+    "natural": "^8.1.1",
+    "redis": "^5.12.1",
+    "socket.io": "^4.8.3",
+    "stripe": "^22.1.1",
+    "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/mercadopago": "^1.5.11",
+    "@types/natural": "^5.1.5",
+    "@types/node": "^25.7.0",
+    "nodemon": "^3.1.14",
+    "prisma": "^5.22.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  }
+}
