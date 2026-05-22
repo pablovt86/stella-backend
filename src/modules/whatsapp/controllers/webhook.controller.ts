@@ -6,233 +6,54 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 const whatsappService = new WhatsAppService();
 
-// Almacenamiento temporal de estados de conversación (en producción usar Redis)
 const userStates: Map<string, { state: string; serviceId?: string; appointmentData?: any }> = new Map();
 
 export class WhatsAppWebhookController {
   
-  /**
-   * GET /webhook/whatsapp
-   * Meta llama a este endpoint para VERIFICAR que el webhook es válido
-   */
-static verifyWebhook(req: Request, res: Response): void {
-  // Extraer parámetros de QUERY o de BODY
-  const mode = req.query['hub.mode'] || req.body['hub.mode'];
-  const token = req.query['hub.verify_token'] || req.body['hub.verify_token'];
-  const challenge = req.query['hub.challenge'] || req.body['hub.challenge'];
-  
-  console.log('🔍 Verificación de webhook:');
-  console.log('   Método:', req.method);
-  console.log('   Query:', req.query);
-  console.log('   Body:', req.body);
-  
-  const expectedToken = 'peluqueria123';
-  
-  // Si hay challenge, responder con él
-  if (challenge) {
-    console.log('✅ Challenge detectado, respondiendo con:', challenge);
-    res.status(200).send(challenge);
-    return;
+  // GET /webhook/whatsapp - Verificación del webhook (SOLO GET)
+  static verifyWebhook(req: Request, res: Response): void {
+    // Solo procesamos GET
+    if (req.method !== 'GET') {
+      console.log('⚠️ Método no GET en verifyWebhook:', req.method);
+      res.status(200).send('OK');
+      return;
+    }
+    
+    const mode = req.query['hub.mode'] as string;
+    const token = req.query['hub.verify_token'] as string;
+    const challenge = req.query['hub.challenge'] as string;
+    
+    console.log('🔍 Verificación de webhook (GET):');
+    console.log('   mode:', mode);
+    console.log('   token:', token);
+    console.log('   challenge:', challenge);
+    
+    const expectedToken = 'peluqueria123';
+    
+    if (challenge) {
+      console.log('✅ Challenge detectado, respondiendo con:', challenge);
+      res.status(200).send(challenge);
+      return;
+    }
+    
+    if (mode === 'subscribe' && token === expectedToken) {
+      console.log('✅ Webhook verificado correctamente');
+      res.status(200).send(challenge || 'OK');
+      return;
+    }
+    
+    console.log('⚠️ Solicitud GET sin parámetros, respondiendo OK');
+    res.status(200).send('OK');
   }
-  
-  // Verificación normal
-  if (mode === 'subscribe' && token === expectedToken) {
-    console.log('✅ Webhook verificado correctamente');
-    res.status(200).send(challenge || 'OK');
-    return;
-  }
-  
-  // Si no hay nada, igual respondemos OK (para evitar errores)
-  console.log('⚠️ Verificación sin datos, respondiendo OK por defecto');
-  res.status(200).send('OK');
-}
 
-  /**
-   * POST /webhook/whatsapp
-   * Meta llama a este endpoint cuando RECIBE un mensaje nuevo
-   */
+  // POST /webhook/whatsapp - Recepción de mensajes
   static async handleWebhook(req: Request, res: Response): Promise<void> {
     try {
-      const body = req.body;
-      
-      console.log('📩 Webhook de WhatsApp POST recibido:', JSON.stringify(body, null, 2));
-
-      // Verificar que sea un evento de mensaje
-      if (body.object === 'whatsapp_business_account') {
-        const entries = body.entry;
-        
-        for (const entry of entries) {
-          const changes = entry.changes;
-          
-          for (const change of changes) {
-            if (change.field === 'messages') {
-              const messages = change.value.messages;
-              
-              if (messages && messages.length > 0) {
-                for (const message of messages) {
-                  await this.processMessage(message, change.value.contacts?.[0]);
-                }
-              }
-            }
-          }
-        }
-      }
-      
+      console.log('📩 Webhook POST recibido');
       res.sendStatus(200);
     } catch (error) {
       console.error('❌ Error en webhook:', error);
       res.sendStatus(500);
-    }
-  }
-  
-  // Procesar mensaje entrante
-  private static async processMessage(message: any, contact: any) {
-    const from = message.from;
-    const senderName = contact?.profile?.name || 'Cliente';
-    const messageType = message.type;
-    
-    console.log(`📨 Mensaje de ${senderName} (${from}):`, message);
-    
-    // Obtener o crear conversación
-    let conversation = await prisma.conversation.findFirst({
-      where: {
-        channel: 'WHATSAPP',
-        externalId: from
-      }
-    });
-    
-    if (!conversation) {
-      const tenant = await prisma.tenant.findFirst();
-      conversation = await prisma.conversation.create({
-        data: {
-          tenantId: tenant!.id,
-          channel: 'WHATSAPP',
-          externalId: from,
-          customerName: senderName,
-          customerPhone: from,
-          state: 'WELCOME'
-        }
-      });
-      console.log(`📝 Nueva conversación creada para ${senderName}`);
-    }
-    
-    // Guardar mensaje
-    await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        direction: 'INBOUND',
-        content: message.text?.body || 'Mensaje sin texto',
-        metadata: message
-      }
-    });
-    
-    // Procesar según tipo de mensaje
-    if (messageType === 'text') {
-      const userText = message.text.body.toLowerCase();
-      await this.handleTextMessage(from, userText, conversation);
-    } else if (messageType === 'interactive') {
-      const interactiveType = message.interactive.type;
-      if (interactiveType === 'button_reply') {
-        const buttonId = message.interactive.button_reply.id;
-        await this.handleButtonReply(from, buttonId, conversation);
-      } else if (interactiveType === 'list_reply') {
-        const listId = message.interactive.list_reply.id;
-        await this.handleListReply(from, listId, conversation);
-      }
-    }
-  }
-  
-  // Manejar mensajes de texto
-  private static async handleTextMessage(from: string, text: string, conversation: any) {
-    const currentState = conversation.state;
-    
-    switch (currentState) {
-      case 'WELCOME':
-        await whatsappService.sendTextMessage(
-          from,
-          `¡Hola! 👋 Bienvenido a la peluquería.\n\n` +
-          `¿Qué te gustaría hacer?\n` +
-          `1️⃣ Ver servicios disponibles\n` +
-          `2️⃣ Reservar un turno\n` +
-          `3️⃣ Consultar precios`
-        );
-        userStates.set(from, { state: 'MAIN_MENU' });
-        break;
-        
-      case 'SELECTING_SERVICE':
-        const service = await prisma.service.findFirst({
-          where: {
-            name: { contains: text, mode: 'insensitive' },
-            isActive: true
-          }
-        });
-        
-        if (service) {
-          userStates.set(from, { state: 'SELECTING_DATE', serviceId: service.id });
-          await whatsappService.sendTextMessage(
-            from,
-            `✅ Servicio seleccionado: *${service.name}*\n` +
-            `💰 Precio: $${service.price}\n` +
-            `💵 Seña: $${service.deposit}\n` +
-            `⏱️ Duración: ${service.durationMins} minutos\n\n` +
-            `📅 ¿Qué día querés venir? (Ej: "mañana 10am" o "viernes 15:30")`
-          );
-        } else {
-          await whatsappService.sendTextMessage(
-            from,
-            `❌ No encontré "${text}". ¿Querés ver la lista de servicios?`
-          );
-        }
-        break;
-        
-      default:
-        await whatsappService.sendTextMessage(
-          from,
-          `¿En qué puedo ayudarte? Enviá "menu" para ver las opciones.`
-        );
-    }
-  }
-  
-  // Manejar respuestas de botones
-  private static async handleButtonReply(from: string, buttonId: string, conversation: any) {
-    switch (buttonId) {
-      case 'view_services':
-        const services = await prisma.service.findMany({ where: { isActive: true } });
-        await whatsappService.sendServiceList(from, services);
-        await prisma.conversation.update({
-          where: { id: conversation.id },
-          data: { state: 'SELECTING_SERVICE' }
-        });
-        userStates.set(from, { state: 'SELECTING_SERVICE' });
-        break;
-        
-      case 'book_appointment':
-        const availableServices = await prisma.service.findMany({ where: { isActive: true } });
-        await whatsappService.sendServiceList(from, availableServices);
-        await prisma.conversation.update({
-          where: { id: conversation.id },
-          data: { state: 'SELECTING_SERVICE' }
-        });
-        userStates.set(from, { state: 'SELECTING_SERVICE' });
-        break;
-    }
-  }
-  
-  // Manejar selección de lista
-  private static async handleListReply(from: string, listId: string, conversation: any) {
-    const service = await prisma.service.findUnique({
-      where: { id: listId }
-    });
-    
-    if (service) {
-      await whatsappService.sendTextMessage(
-        from,
-        `✅ Elegiste *${service.name}*\n\n` +
-        `💰 Precio: $${service.price}\n` +
-        `💵 Seña: $${service.deposit}\n\n` +
-        `📅 Decime qué día y horario preferís.`
-      );
-      userStates.set(from, { state: 'SELECTING_DATE', serviceId: service.id });
     }
   }
 }
