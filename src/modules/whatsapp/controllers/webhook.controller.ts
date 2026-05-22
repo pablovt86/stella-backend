@@ -15,38 +15,37 @@ export class WhatsAppWebhookController {
    * GET /webhook/whatsapp
    * Meta llama a este endpoint para VERIFICAR que el webhook es válido
    */
-  static verifyWebhook(req: Request, res: Response): void {
-    // Loggear todo lo que llega
-    console.log('🔍 Verificación de webhook recibida:');
-    console.log('   Método:', req.method);
-    console.log('   Query:', JSON.stringify(req.query));
-    console.log('   Body:', JSON.stringify(req.body));
-    console.log('   Headers:', JSON.stringify(req.headers));
-    
-    // Extraer parámetros (de query o de body)
-    const mode = req.query['hub.mode'] || req.body['hub.mode'];
-    const token = req.query['hub.verify_token'] || req.body['hub.verify_token'];
-    const challenge = req.query['hub.challenge'] || req.body['hub.challenge'];
-    
-    const expectedToken = 'peluqueria123';
-    
-    // Si hay challenge, responder con él (para verificación)
-    if (challenge) {
-      console.log('✅ Challenge detectado, respondiendo con:', challenge);
-      res.status(200).send(challenge);
-      return;
-    }
-    
-    // Verificación normal
-    if (mode === 'subscribe' && token === expectedToken) {
-      console.log('✅ Webhook verificado correctamente');
-      res.status(200).send(challenge || 'OK');
-    } else {
-      // Si no hay challenge ni parámetros, igual respondemos OK
-      console.log('⚠️ Verificación sin challenge, respondiendo OK por defecto');
-      res.status(200).send('OK');
-    }
+static verifyWebhook(req: Request, res: Response): void {
+  // Extraer parámetros de QUERY o de BODY
+  const mode = req.query['hub.mode'] || req.body['hub.mode'];
+  const token = req.query['hub.verify_token'] || req.body['hub.verify_token'];
+  const challenge = req.query['hub.challenge'] || req.body['hub.challenge'];
+  
+  console.log('🔍 Verificación de webhook:');
+  console.log('   Método:', req.method);
+  console.log('   Query:', req.query);
+  console.log('   Body:', req.body);
+  
+  const expectedToken = 'peluqueria123';
+  
+  // Si hay challenge, responder con él
+  if (challenge) {
+    console.log('✅ Challenge detectado, respondiendo con:', challenge);
+    res.status(200).send(challenge);
+    return;
   }
+  
+  // Verificación normal
+  if (mode === 'subscribe' && token === expectedToken) {
+    console.log('✅ Webhook verificado correctamente');
+    res.status(200).send(challenge || 'OK');
+    return;
+  }
+  
+  // Si no hay nada, igual respondemos OK (para evitar errores)
+  console.log('⚠️ Verificación sin datos, respondiendo OK por defecto');
+  res.status(200).send('OK');
+}
 
   /**
    * POST /webhook/whatsapp
