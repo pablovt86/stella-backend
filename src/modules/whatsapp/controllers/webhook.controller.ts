@@ -12,21 +12,22 @@ const userStates: Map<string, { state: string; serviceId?: string; appointmentDa
 export class WhatsAppWebhookController {
   
   // GET /webhook/whatsapp - Verificación del webhook
-  static verifyWebhook(req: Request, res: Response) {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
-    
-    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
-    
-    if (mode === 'subscribe' && token === verifyToken) {
-      console.log('✅ Webhook verificado correctamente');
-      res.status(200).send(challenge);
-    } else {
-      console.log('❌ Error de verificación del webhook');
-      res.sendStatus(403);
-    }
+static verifyWebhook(req: Request, res: Response) {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  
+  // ⚠️ Usamos el mismo token que configurarás en Meta
+  const verifyToken = 'peluqueria123';
+  
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('✅ Webhook verificado correctamente');
+    res.status(200).send(challenge);
+  } else {
+    console.log('❌ Error de verificación del webhook. Token recibido:', token);
+    res.sendStatus(403);
   }
+}
   
   // POST /webhook/whatsapp - Recepción de mensajes
   static async handleWebhook(req: Request, res: Response) {
