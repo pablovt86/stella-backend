@@ -377,7 +377,75 @@ app.post('/api/sentiment/analyze', (req, res) => {
   }
 });
 
+// ==================== LISTAR TURNOS (para Botpress) ====================
+app.get('/api/botpress/appointments', async (req, res) => {
+  try {
+    const { phone, name } = req.query;
+    const prisma = new PrismaClient();
+    
+    const whereClause: any = {};
+    if (phone) whereClause.customerPhone = phone as string;
+    if (name) whereClause.customerName = { contains: name as string, mode: 'insensitive' };
+    
+    const appointments = await prisma.appointment.findMany({
+      where: whereClause,
+      include: { service: true },
+      orderBy: { dateTime: 'desc' },
+      take: 10
+    });
+    
+    res.json({ success: true, appointments });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
+
+// ==================== CANCELAR TURNO (para Botpress) ====================
+app.post('/api/botpress/cancel-appointment', async (req, res) => {
+  try {
+    const { appointmentId, reason } = req.body;
+    const prisma = new PrismaClient();
+    
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: { payment: true }
+    });
+    
+    if (!appointment) {
+      return res.status(404).json({ success: false, error: 'Turno no encontrado' });
+    }
+    
+    // Verificar si se puede cancelar (más de 2 horas de anticipación)
+    const hoursBefore = (new Date(appointment.dateTime).getTime() - Date.now()) / (1000 * 60 * 60);
+    if (hoursBefore < 2) {
+      return res.json({ 
+        success: false, 
+        error: 'No se puede cancelar con menos de 2 horas de anticipación',
+        cancellationAllowed: false
+      });
+    }
+    
+    // Cancelar el turno
+    const updated = await prisma.appointment.update({
+      where: { id: appointmentId },
+      data: { 
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        notes: reason || 'Cancelado por cliente'
+      }
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Turno cancelado exitosamente',
+      appointment: updated
+    });
+    
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 
 
