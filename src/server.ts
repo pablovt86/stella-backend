@@ -447,6 +447,25 @@ app.post('/api/botpress/cancel-appointment', async (req, res) => {
   }
 });
 
+// Endpoint de prueba para verificar conexión a Supabase
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const prisma = new PrismaClient();
+    // Intenta hacer una consulta simple
+    const result = await prisma.$queryRaw`SELECT 1 as connected`;
+    res.json({ 
+      success: true, 
+      message: '✅ Conexión a Supabase exitosa',
+      result 
+    });
+  } catch (error: any) {
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ Error de conexión',
+      error: error.message 
+    });
+  }
+});
 
 
 // Iniciar servidor
