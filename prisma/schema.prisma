@@ -1,6 +1,7 @@
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {
@@ -27,6 +28,7 @@ model Tenant {
   conversations Conversation[]
   payments      Payment[]
   WebhookConfig WebhookConfig?
+  professionals Professional[]
 
   @@index([subdomain])
 }
@@ -120,11 +122,43 @@ model Service {
   updatedAt    DateTime @updatedAt
 
   appointments Appointment[]
+  professionalServices ProfessionalService[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
 }
 
+// ==================== PROFESIONALES (NUEVO - RELACIÓN MUCHOS A MUCHOS) ====================
+model Professional {
+  id           String    @id @default(cuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  specialty    String?   
+  category     String    // barberia, peluqueria, unas
+  schedule     Json?     
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  professionalServices ProfessionalService[]
+  appointments Appointment[]
+
+  @@index([tenantId])
+  @@index([category])
+}
+
+// TABLA INTERMEDIA: Profesional - Servicio (muchos a muchos)
+model ProfessionalService {
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  serviceId      String
+  service        Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([professionalId, serviceId])
+}
+
+// ==================== TURNOS ====================
 model Appointment {
   id            String            @id @default(cuid())
   tenantId      String
@@ -134,6 +168,8 @@ model Appointment {
   customerEmail String?
   serviceId     String
   service       Service           @relation(fields: [serviceId], references: [id])
+  professionalId String?
+  professional   Professional?    @relation(fields: [professionalId], references: [id])
   dateTime      DateTime
   durationMins  Int
   status        AppointmentStatus @default(PENDING)
@@ -152,6 +188,7 @@ model Appointment {
   @@index([tenantId])
   @@index([status])
   @@index([dateTime])
+  @@index([professionalId])
 }
 
 enum AppointmentStatus {
@@ -160,6 +197,7 @@ enum AppointmentStatus {
   COMPLETED
   CANCELLED
   NO_SHOW
+  HOLD
 }
 
 enum DepositStatus {
@@ -167,33 +205,6 @@ enum DepositStatus {
   PENDING
   PAID
   REFUNDED
-}
-
-// Tabla para análisis de sentimiento
-model SentimentAnalysis {
-  id             String   @id @default(cuid())
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  messageId      String
-  messageText    String   @db.Text
-  
-  sentiment_score Float
-  sentiment_label String   // POSITIVE, NEUTRAL, NEGATIVE
-  sentiment_mood  String   // very_negative, negative, neutral, positive, very_positive
-  severity        String   // low, medium, high, critical
-  confidence      Float
-  
-  positive_words  Int      @default(0)
-  negative_words  Int      @default(0)
-  keywords        Json?    
-  language        String   @default("es")
-  
-  createdAt       DateTime @default(now())
-  
-  @@index([conversationId])
-  @@index([sentiment_score])
-  @@index([severity])
-  @@index([createdAt])
 }
 
 // ==================== PAGOS ====================
@@ -256,6 +267,7 @@ model Conversation {
 
   messages Message[]
   sentimentAnalyses SentimentAnalysis[]
+
   @@unique([tenantId, channel, externalId])
   @@index([tenantId, state])
 }
@@ -309,4 +321,31 @@ model WebhookConfig {
   webhookSecret String
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+// ==================== ANÁLISIS DE SENTIMIENTO ====================
+model SentimentAnalysis {
+  id             String   @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  messageId      String
+  messageText    String   @db.Text
+  
+  sentiment_score Float
+  sentiment_label String   // POSITIVE, NEUTRAL, NEGATIVE
+  sentiment_mood  String   // very_negative, negative, neutral, positive, very_positive
+  severity        String   // low, medium, high, critical
+  confidence      Float
+  
+  positive_words  Int      @default(0)
+  negative_words  Int      @default(0)
+  keywords        Json?    
+  language        String   @default("es")
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([conversationId])
+  @@index([sentiment_score])
+  @@index([severity])
+  @@index([createdAt])
 }

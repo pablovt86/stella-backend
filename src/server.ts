@@ -466,6 +466,32 @@ app.get('/api/test-db', async (req, res) => {
     });
   }
 });
+// Obtener profesionales por categoría
+app.get('/api/botpress/professionals', async (req, res) => {
+  try {
+    const { category } = req.query;
+    const prisma = new PrismaClient();
+    
+    const professionals = await prisma.professional.findMany({
+      where: {
+        category: category as string,
+        isActive: true
+      },
+      include: {
+        professionalServices: {
+          include: {
+            service: true
+          }
+        }
+      }
+    });
+    
+    res.json({ success: true, professionals });
+  } catch (error: any) {
+    console.error('Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 
 // Iniciar servidor
