@@ -1,25 +1,31 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import cors from 'cors';  // ✅ Agregar esta línea
+import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import { WhatsAppWebhookController } from './modules/whatsapp/controllers/webhook.controller';
+import mercadopago from 'mercadopago';
 
 dotenv.config();
+
+// Configurar MercadoPago con tu token de prueba
+(mercadopago as any).configure({
+  access_token: process.env.MP_ACCESS_TOKEN || 'TEST-4325437722170573-052116-2c61f4e15d2cc8c33ea20200b9cbc65a-1770074697'
+});
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// ✅ CORS - Permite que el frontend (puerto 5173) hable con el backend
+// CORS - Permite que el frontend hable con el backend
 app.use(cors({
-  origin: ['http://localhost:8080', 'http://localhost:5173', 'http://192.168.1.44:8080'],
+  origin: ['http://localhost:8080', 'http://localhost:5173', 'http://192.168.1.44:8080', 'http://localhost'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// ==================== ENDPOINTS EXISTENTES ====================
+// ==================== ENDPOINTS PÚBLICOS ====================
 
 // Ruta de prueba
 app.get('/health', (req, res) => {
@@ -115,105 +121,74 @@ app.get('/api/appointments', async (req, res) => {
 });
 
 
-// Dashboard de sentimiento
-// app.get('/api/analytics/sentiment', async (req, res) => {
-//   try {
-//     const prisma = new PrismaClient();
-//     const { days = 7 } = req.query;
-    
-//     const startDate = new Date();
-//     startDate.setDate(startDate.getDate() - Number(days));
-    
-//     const stats = await prisma.sentimentAnalysis.groupBy({
-//       by: ['sentiment_label', 'severity'],
-//       where: {
-//         createdAt: { gte: startDate }
-//       },
-//       _count: true
-//     });
-    
-//     const recentAlerts = await prisma.sentimentAnalysis.findMany({
-//       where: {
-//         severity: { in: ['high', 'critical'] },
-//         createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-//       },
-//       orderBy: { createdAt: 'desc' },
-//       take: 10,
-//       include: { conversation: true }
-//     });
-    
-//     res.json({
-//       success: true,
-//       data: {
-//         summary: stats,
-//         alerts: recentAlerts,
-//         period: `${days} días`
-//       }
-//     });
-    
-//   } catch (error: any) {
-//     res.status(500).json({ success: false, error: error.message });
-//   }
-// });
 
 
-
-// ==================== MERCADOPAGO ====================
-
+// Endpoint para crear pago
+// ==================== MERCADOPAGO (VERSIÓN QUE SÍ FUNCIONA) ====================
 app.post('/api/payments/create/:appointmentId', async (req, res) => {
   try {
     const { appointmentId } = req.params;
     const prisma = new PrismaClient();
-    
+
+    // 1. Obtener los datos de la cita
     const appointment = await prisma.appointment.findUnique({
       where: { id: appointmentId },
-      include: { service: true }
+      include: { service: true, tenant: true }
     });
-    
+
     if (!appointment) {
       return res.status(404).json({ success: false, error: 'Cita no encontrada' });
     }
-    
-    const paymentUrl = `https://sandbox.mercadopago.com.ar/checkout/v1/redirect?pref_id=test-${appointmentId}`;
-    
-    res.json({ 
-      success: true, 
-      paymentUrl: paymentUrl,
-      amount: appointment.depositAmount,
-      message: 'Modo sandbox - Integración pendiente'
+
+    // 2. Crear la preferencia REAL en Mercado Pago
+    const preference = {
+      items: [
+        {
+          title: `Seña - ${appointment.service.name}`,
+          quantity: 1,
+          currency_id: 'ARS',
+          unit_price: Number(appointment.depositAmount),
+        },
+      ],
+      external_reference: appointmentId,
+      back_urls: {
+        success: `${process.env.BACKEND_URL}/api/payments/success`,
+        failure: `${process.env.BACKEND_URL}/api/payments/failure`,
+      },
+      auto_return: 'approved',
+    };
+
+    const response = await mercadopago.preferences.create(preference);
+
+    // 3. (Opcional) Guardar el registro en tu base de datos
+    await prisma.payment.create({
+      data: {
+        tenantId: appointment.tenantId,
+        appointmentId: appointment.id,
+        amount: appointment.depositAmount,
+        type: 'DEPOSIT',
+        status: 'PENDING',
+        provider: 'MERCADOPAGO',
+        providerPaymentId: response.body.id,
+      },
     });
-    
+
+    // 4. ¡Éxito! Devolver la URL real de Mercado Pago
+    res.json({
+      success: true,
+      paymentUrl: response.body.init_point,
+      preferenceId: response.body.id,
+    });
+
   } catch (error: any) {
-    console.error('Error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Error al crear pago:', error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Error al crear el pago',
+      detail: error.message,
+    });
   }
 });
-
-app.get('/api/payments/status/:appointmentId', async (req, res) => {
-  try {
-    const { appointmentId } = req.params;
-    const prisma = new PrismaClient();
-    
-    const appointment = await prisma.appointment.findUnique({
-      where: { id: appointmentId }
-    });
-    
-    if (!appointment) {
-      return res.status(404).json({ success: false, error: 'Cita no encontrada' });
-    }
-    
-    res.json({ 
-      success: true, 
-      status: appointment.depositStatus,
-      message: appointment.depositStatus === 'PAID' ? 'Pago confirmado' : 'Pago pendiente'
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ==================== WHATSAPP WEBHOOKS ====================
-
 app.get('/webhook/whatsapp', WhatsAppWebhookController.verifyWebhook);
 app.post('/webhook/whatsapp', WhatsAppWebhookController.handleWebhook);
 
@@ -229,13 +204,8 @@ app.post('/api/whatsapp/send', async (req, res) => {
   }
 });
 
-
-
 // ==================== WEBHOOKS PARA BOTPRESS ====================
-// Estos endpoints son llamados desde Botpress (WhatsApp/Telegram)
-// para crear turnos, verificar disponibilidad, etc.
 
-// 1. Obtener servicios disponibles (para mostrar en el chat)
 app.post('/api/botpress/services', async (req, res) => {
   try {
     const { category } = req.body;
@@ -264,7 +234,6 @@ app.post('/api/botpress/services', async (req, res) => {
   }
 });
 
-// 2. Verificar disponibilidad de un turno (para evitar dobles reservas)
 app.post('/api/botpress/check-availability', async (req, res) => {
   try {
     const { serviceId, date, time } = req.body;
@@ -290,10 +259,6 @@ app.post('/api/botpress/check-availability', async (req, res) => {
   }
 });
 
-// 3. Crear un turno (con HOLD de 15 minutos para pagar la seña)
-//    Este es el endpoint PRINCIPAL que Botpress llama
-// 3. Crear un turno (desde Botpress)
-// Crear un turno desde Botpress (con HOLD de 15 minutos)
 app.post('/api/botpress/create-appointment', async (req, res) => {
   try {
     console.log('📥 Webhook de Botpress recibido:', req.body);
@@ -301,7 +266,6 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
     const { serviceId, customerName, customerPhone, customerEmail, date, time } = req.body;
     const prisma = new PrismaClient();
     
-    // Buscar el servicio
     const service = await prisma.service.findUnique({
       where: { id: serviceId || 'corte-caballero' }
     });
@@ -310,19 +274,14 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Servicio no encontrado' });
     }
     
-    // Buscar el tenant
     const tenant = await prisma.tenant.findFirst();
     if (!tenant) {
       return res.status(404).json({ success: false, error: 'Tenant no encontrado' });
     }
     
-    // Crear fecha y hora
     const dateTime = new Date(`${date || '2026-05-25'}T${time || '15:00'}:00`);
-    
-    // Calcular expiración (15 minutos)
     const holdExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
     
-    // Crear el turno
     const appointment = await prisma.appointment.create({
       data: {
         tenantId: tenant.id,
@@ -335,12 +294,11 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
         depositAmount: service.deposit,
         status: 'PENDING',
         depositStatus: 'NOT_PAID',
-        holdExpiresAt: holdExpiresAt   // ← AHORA SÍ FUNCIONA
+        holdExpiresAt: holdExpiresAt
       }
     });
     
     console.log('✅ Turno creado:', appointment.id);
-    console.log('⏰ Expira:', holdExpiresAt);
     
     res.json({
       success: true,
@@ -358,7 +316,7 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-// 4. Webhook para análisis de sentimiento (opcional)
+
 app.post('/api/sentiment/analyze', (req, res) => {
   try {
     const { text } = req.body;
@@ -366,7 +324,6 @@ app.post('/api/sentiment/analyze', (req, res) => {
       return res.status(400).json({ success: false, error: 'Texto requerido' });
     }
     
-    // Importar el analizador de sentimiento
     const { sentimentAnalyzer } = require('./modules/messaging/processors/sentiment.analyzer');
     const result = sentimentAnalyzer.analyze(text);
     
@@ -377,7 +334,6 @@ app.post('/api/sentiment/analyze', (req, res) => {
   }
 });
 
-// ==================== LISTAR TURNOS (para Botpress) ====================
 app.get('/api/botpress/appointments', async (req, res) => {
   try {
     const { phone, name } = req.query;
@@ -400,8 +356,6 @@ app.get('/api/botpress/appointments', async (req, res) => {
   }
 });
 
-
-// ==================== CANCELAR TURNO (para Botpress) ====================
 app.post('/api/botpress/cancel-appointment', async (req, res) => {
   try {
     const { appointmentId, reason } = req.body;
@@ -416,7 +370,6 @@ app.post('/api/botpress/cancel-appointment', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Turno no encontrado' });
     }
     
-    // Verificar si se puede cancelar (más de 2 horas de anticipación)
     const hoursBefore = (new Date(appointment.dateTime).getTime() - Date.now()) / (1000 * 60 * 60);
     if (hoursBefore < 2) {
       return res.json({ 
@@ -426,7 +379,6 @@ app.post('/api/botpress/cancel-appointment', async (req, res) => {
       });
     }
     
-    // Cancelar el turno
     const updated = await prisma.appointment.update({
       where: { id: appointmentId },
       data: { 
@@ -447,11 +399,9 @@ app.post('/api/botpress/cancel-appointment', async (req, res) => {
   }
 });
 
-// Endpoint de prueba para verificar conexión a Supabase
 app.get('/api/test-db', async (req, res) => {
   try {
     const prisma = new PrismaClient();
-    // Intenta hacer una consulta simple
     const result = await prisma.$queryRaw`SELECT 1 as connected`;
     res.json({ 
       success: true, 
@@ -466,7 +416,7 @@ app.get('/api/test-db', async (req, res) => {
     });
   }
 });
-// Obtener profesionales por categoría
+
 app.get('/api/botpress/professionals', async (req, res) => {
   try {
     const { category } = req.query;
@@ -491,6 +441,24 @@ app.get('/api/botpress/professionals', async (req, res) => {
     console.error('Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// Endpoint de éxito después del pago
+app.get('/api/payments/success', (req, res) => {
+  res.send(`
+    <h1>✅ Pago exitoso!</h1>
+    <p>Tu pago ha sido procesado. El turno se ha confirmado.</p>
+    <p>Puedes cerrar esta ventana.</p>
+  `);
+});
+
+// Endpoint de fracaso después del pago
+app.get('/api/payments/failure', (req, res) => {
+  res.send(`
+    <h1>❌ Pago fallido</h1>
+    <p>No se pudo procesar el pago. Por favor, intenta de nuevo.</p>
+    <p>Puedes cerrar esta ventana.</p>
+  `);
 });
 
 
