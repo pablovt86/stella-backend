@@ -317,10 +317,8 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
 
     // ============================================================================
     // FIX DE LOGICA CRÍTICO 2: MERCADOPAGO INTEGRADO EN CREAR-APPOINTMENT
-    // EXPLICACIÓN: Dejabas la función colgada e inconclusa con la llave abierta al final. 
-    // Ahora, cuando Botpress crea el turno, llama inmediatamente a Mercado Pago 
-    // desde acá adentro, genera la preferencia de pago, mapea la respuesta y le
-    // retorna a Botpress tanto el ID de la cita como la "paymentUrl" real.
+    // EXPLICACIÓN: Se cambia init_point por sandbox_init_point para que el token
+    // de prueba de Render no redireccione al home general de la plataforma.
     // ============================================================================
     let paymentUrl = '';
     try {
@@ -343,7 +341,11 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
       };
 
       const mpResponse = await (mercadopago as any).preferences.create(preference);
-      paymentUrl = mpResponse.body.init_point;
+      
+      // ============================================================================
+      // 🚀 EL FIX ACÁ: Cambiamos a sandbox_init_point
+      // ============================================================================
+      paymentUrl = mpResponse.body.sandbox_init_point;
 
       // Dejamos registro del intento de pago en la DB
       await prisma.payment.create({
@@ -360,7 +362,6 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
       });
     } catch (mpErr: any) {
       console.error('⚠️ Error al generar Mercado Pago en el webhook directo:', mpErr.message);
-      // No cortamos la ejecución para que Botpress reciba la cita al menos.
     }
 
     // Retorno limpio para que la acción de Botpress atrape el link azul
