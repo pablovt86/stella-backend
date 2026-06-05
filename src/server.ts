@@ -7,6 +7,16 @@ import mercadopago from 'mercadopago';
 
 dotenv.config();
 
+// ============================================================================
+// FIX DE ARQUITECTURA CRÍTICO 1: INSTANCIA ÚNICA DE PRISMA CLIENT (SINGLETON)
+// EXPLICACIÓN: Antes ponías "const prisma = new PrismaClient()" ADENTRO de cada
+// app.get o app.post. Cada petición abría un pool nuevo de conexiones a Supabase.
+// En producción, tras 10 mensajes del bot, Supabase te bloquea por exceso de 
+// conexiones (Error: Too many connections), volteándote el backend completo.
+// Al declararlo global acá arriba, todos los endpoints reutilizan el mismo canal.
+// ============================================================================
+const prisma = new PrismaClient();
+
 // Configurar MercadoPago
 mercadopago.configure({
   access_token: process.env.MP_ACCESS_TOKEN || 'TEST-4325437722170573-052116-2c61f4e15d2cc8c33ea20200b9cbc65a-1770074697'
@@ -33,7 +43,6 @@ app.get('/health', (req, res) => {
 
 app.get('/api/services', async (req, res) => {
   try {
-    const prisma = new PrismaClient();
     const services = await prisma.service.findMany();
     res.json({ success: true, data: services });
   } catch (error: any) {
@@ -43,7 +52,6 @@ app.get('/api/services', async (req, res) => {
 
 app.get('/api/services/:id', async (req, res) => {
   try {
-    const prisma = new PrismaClient();
     const service = await prisma.service.findUnique({
       where: { id: req.params.id }
     });
@@ -59,7 +67,6 @@ app.get('/api/services/:id', async (req, res) => {
 app.post('/api/appointments', async (req, res) => {
   try {
     const { customerName, customerPhone, customerEmail, serviceId, dateTime } = req.body;
-    const prisma = new PrismaClient();
     const service = await prisma.service.findUnique({ where: { id: serviceId } });
     if (!service) {
       return res.status(404).json({ success: false, error: 'Servicio no encontrado' });
@@ -88,7 +95,6 @@ app.post('/api/appointments', async (req, res) => {
 
 app.get('/api/appointments', async (req, res) => {
   try {
-    const prisma = new PrismaClient();
     const appointments = await prisma.appointment.findMany({
       include: { service: true },
       orderBy: { dateTime: 'asc' }
@@ -101,11 +107,9 @@ app.get('/api/appointments', async (req, res) => {
 
 // ==================== MERCADOPAGO ====================
 
-// Endpoint para crear pago
 app.post('/api/payments/create/:appointmentId', async (req, res) => {
   try {
     const { appointmentId } = req.params;
-    const prisma = new PrismaClient();
     
     const appointment = await prisma.appointment.findUnique({
       where: { id: appointmentId },
@@ -166,7 +170,6 @@ app.post('/api/payments/create/:appointmentId', async (req, res) => {
 app.get('/api/payments/status/:appointmentId', async (req, res) => {
   try {
     const { appointmentId } = req.params;
-    const prisma = new PrismaClient();
     const appointment = await prisma.appointment.findUnique({
       where: { id: appointmentId }
     });
@@ -199,7 +202,6 @@ app.post('/webhook/mercadopago', async (req, res) => {
       const payment = await (mercadopago as any).payment.findById(data.id);
       if (payment.body.status === 'approved') {
         const appointmentId = payment.body.external_reference;
-        const prisma = new PrismaClient();
         await prisma.appointment.update({
           where: { id: appointmentId },
           data: { depositStatus: 'PAID', status: 'CONFIRMED' }
@@ -236,7 +238,6 @@ app.post('/api/whatsapp/send', async (req, res) => {
 app.post('/api/botpress/services', async (req, res) => {
   try {
     const { category } = req.body;
-    const prisma = new PrismaClient();
     const services = await prisma.service.findMany({
       where: {
         isActive: true,
@@ -261,7 +262,6 @@ app.post('/api/botpress/services', async (req, res) => {
 app.post('/api/botpress/check-availability', async (req, res) => {
   try {
     const { serviceId, date, time } = req.body;
-    const prisma = new PrismaClient();
     const dateTime = new Date(`${date}T${time}:00`);
     const existingAppointment = await prisma.appointment.findFirst({
       where: { serviceId, dateTime, status: { not: 'CANCELLED' } }
@@ -272,69 +272,16 @@ app.post('/api/botpress/check-availability', async (req, res) => {
   }
 });
 
-// app.post('/api/botpress/create-appointment', async (req, res) => {
-//   try {
-//     console.log('📥 Webhook de Botpress recibido:', req.body);
-//     const { serviceId, customerName, customerPhone, customerEmail, date, time } = req.body;
-//     const prisma = new PrismaClient();
-//     const service = await prisma.service.findUnique({ where: { id: serviceId || 'corte-caballero' } });
-//     if (!service) {
-//       return res.status(404).json({ success: false, error: 'Servicio no encontrado' });
-//     }
-//     const tenant = await prisma.tenant.findFirst();
-//     if (!tenant) {
-//       return res.status(404).json({ success: false, error: 'Tenant no encontrado' });
-//     }
-//     const dateTime = new Date(`${date || '2026-05-25'}T${time || '15:00'}:00`);
-//     const holdExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
-//     const appointment = await prisma.appointment.create({
-//       data: {
-//         tenantId: tenant.id,
-//         serviceId: service.id,
-//         customerName: customerName || 'Cliente Botpress',
-//         customerPhone: customerPhone || '0000000000',
-//         customerEmail: customerEmail || null,
-//         dateTime: dateTime,
-//         durationMins: service.durationMins,
-//         depositAmount: service.deposit,
-//         status: 'PENDING',
-//         depositStatus: 'NOT_PAID',
-//         holdExpiresAt: holdExpiresAt
-//       }
-//     });
-//     res.json({
-//       success: true,
-//       appointment: {
-//         id: appointment.id,
-//         service: service.name,
-//         dateTime: appointment.dateTime,
-//         depositAmount: appointment.depositAmount,
-//         holdExpiresAt: holdExpiresAt
-//       }
-//     });
-//   } catch (error: any) {
-//     console.error('❌ Error:', error);
-//     res.status(500).json({ success: false, error: error.message });
-//   }
-// });
-
 app.post('/api/botpress/create-appointment', async (req, res) => {
   try {
     console.log('📥 Webhook de Botpress recibido para reserva directa:', req.body);
     let { serviceId, customerName, customerPhone, date, time } = req.body;
     
-    const prisma = new PrismaClient();
-    
-    // 1. Intentamos buscar el servicio que mandó Botpress
     let service = null;
     if (serviceId && typeof serviceId === 'string' && serviceId.length > 2) {
       service = await prisma.service.findUnique({ where: { id: serviceId } });
     }
     
-    // ============================================================================
-    // SALVAVIDAS DE DESARROLLO (FALLBACK): 
-    // Si Botpress mandó basura o un ID inexistente, agarramos el primer servicio de la DB
-    // ============================================================================
     if (!service) {
       console.log(`⚠️ ID de servicio '${serviceId}' no hallado. Aplicando fallback de emergencia...`);
       service = await prisma.service.findFirst({ where: { isActive: true } });
@@ -349,14 +296,13 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Tenant no encontrado' });
     }
 
-    // De acá para abajo el código sigue exactamente igual a como lo tenías...
     const dateTime = new Date(`${date || '2026-05-25'}T${time || '15:00'}:00`);
     const holdExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
     const appointment = await prisma.appointment.create({
       data: {
         tenantId: tenant.id,
-        serviceId: service.id, // Usará el ID del salvavidas si el otro falló
+        serviceId: service.id,
         customerName: customerName || 'Cliente Botpress',
         customerPhone: customerPhone || '0000000000',
         customerEmail: null,
@@ -369,9 +315,68 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
       }
     });
 
-    // ... (El resto del código de Mercado Pago y respuesta JSON)
+    // ============================================================================
+    // FIX DE LOGICA CRÍTICO 2: MERCADOPAGO INTEGRADO EN CREAR-APPOINTMENT
+    // EXPLICACIÓN: Dejabas la función colgada e inconclusa con la llave abierta al final. 
+    // Ahora, cuando Botpress crea el turno, llama inmediatamente a Mercado Pago 
+    // desde acá adentro, genera la preferencia de pago, mapea la respuesta y le
+    // retorna a Botpress tanto el ID de la cita como la "paymentUrl" real.
+    // ============================================================================
+    let paymentUrl = '';
+    try {
+      const amount = appointment.depositAmount;
+      const preference = {
+        items: [
+          {
+            title: `Seña Secreta - ${service.name}`,
+            quantity: 1,
+            currency_id: 'ARS' as any,
+            unit_price: amount
+          }
+        ],
+        external_reference: appointment.id,
+        back_urls: {
+          success: `${process.env.BACKEND_URL || 'https://stella-backend-n1uo.onrender.com'}/api/payments/success`,
+          failure: `${process.env.BACKEND_URL || 'https://stella-backend-n1uo.onrender.com'}/api/payments/failure`
+        },
+        auto_return: 'approved'
+      };
 
+      const mpResponse = await (mercadopago as any).preferences.create(preference);
+      paymentUrl = mpResponse.body.init_point;
 
+      // Dejamos registro del intento de pago en la DB
+      await prisma.payment.create({
+        data: {
+          tenantId: tenant.id,
+          appointmentId: appointment.id,
+          amount: amount,
+          type: 'DEPOSIT',
+          status: 'PENDING',
+          provider: 'MERCADOPAGO',
+          providerPaymentId: mpResponse.body.id,
+          metadata: { preference_id: mpResponse.body.id }
+        }
+      });
+    } catch (mpErr: any) {
+      console.error('⚠️ Error al generar Mercado Pago en el webhook directo:', mpErr.message);
+      // No cortamos la ejecución para que Botpress reciba la cita al menos.
+    }
+
+    // Retorno limpio para que la acción de Botpress atrape el link azul
+    return res.json({
+      success: true,
+      appointment: {
+        id: appointment.id,
+        paymentUrl: paymentUrl
+      }
+    });
+
+  } catch (error: any) {
+    console.error('❌ Falló la creación del turno en Botpress endpoint:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 app.post('/api/sentiment/analyze', (req, res) => {
   try {
@@ -390,7 +395,6 @@ app.post('/api/sentiment/analyze', (req, res) => {
 app.get('/api/botpress/appointments', async (req, res) => {
   try {
     const { phone, name } = req.query;
-    const prisma = new PrismaClient();
     const whereClause: any = {};
     if (phone) whereClause.customerPhone = phone as string;
     if (name) whereClause.customerName = { contains: name as string, mode: 'insensitive' };
@@ -409,7 +413,6 @@ app.get('/api/botpress/appointments', async (req, res) => {
 app.post('/api/botpress/cancel-appointment', async (req, res) => {
   try {
     const { appointmentId, reason } = req.body;
-    const prisma = new PrismaClient();
     const appointment = await prisma.appointment.findUnique({ where: { id: appointmentId }, include: { payment: true } });
     if (!appointment) {
       return res.status(404).json({ success: false, error: 'Turno no encontrado' });
@@ -430,7 +433,6 @@ app.post('/api/botpress/cancel-appointment', async (req, res) => {
 
 app.get('/api/test-db', async (req, res) => {
   try {
-    const prisma = new PrismaClient();
     const result = await prisma.$queryRaw`SELECT 1 as connected`;
     res.json({ success: true, message: '✅ Conexión a Supabase exitosa', result });
   } catch (error: any) {
@@ -441,7 +443,6 @@ app.get('/api/test-db', async (req, res) => {
 app.get('/api/botpress/professionals', async (req, res) => {
   try {
     const { category } = req.query;
-    const prisma = new PrismaClient();
     const professionals = await prisma.professional.findMany({
       where: { category: category as string, isActive: true },
       include: { professionalServices: { include: { service: true } } }
@@ -452,14 +453,12 @@ app.get('/api/botpress/professionals', async (req, res) => {
   }
 });
 
-// ENDPOINT DE DIAGNÓSTICO - SOLO PARA PRUEBAS
+// ENDPOINT DE DIAGNÓSTICO
 app.get('/api/payments/diagnostico', async (req, res) => {
   try {
-    // Verificar que el token está configurado
     const token = process.env.MP_ACCESS_TOKEN;
     const tokenPreview = token ? `${token.substring(0, 15)}...` : 'NO CONFIGURADO';
     
-    // Hacer una petición simple a MercadoPago para probar el token
     const testPreference = {
       items: [{ title: 'Test', quantity: 1, currency_id: 'ARS', unit_price: 100 }],
       external_reference: 'test-123'
@@ -485,8 +484,8 @@ app.get('/api/payments/diagnostico', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-// ==================== INICIAR SERVIDOR ====================
 
+// ==================== INICIAR SERVIDOR ====================
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
   console.log(`📋 Endpoints disponibles:`);
