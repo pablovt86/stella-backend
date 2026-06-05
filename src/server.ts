@@ -433,10 +433,21 @@ app.post('/api/botpress/cancel-appointment', async (req, res) => {
 
 app.get('/api/test-db', async (req, res) => {
   try {
-    const result = await prisma.$queryRaw`SELECT 1 as connected`;
-    res.json({ success: true, message: '✅ Conexión a Supabase exitosa', result });
+    // 1. Forzamos una preferencia de prueba de $10 con el token que tenés hoy en Render
+    const preference = await (mercadopago as any).preferences.create({
+      items: [{ id: 'test-123', title: 'Test QA Stella', quantity: 1, unit_price: 10, currency_id: 'ARS' }]
+    });
+
+    // 2. Escupimos los dos links posibles en la pantalla para analizar el comportamiento
+    return res.status(200).json({
+      success: true,
+      explicacion: "Probá hacerle click a los dos links de abajo desde una pestaña de incógnito",
+      OPCION_A_INIT_POINT: preference.init_point,
+      OPCION_B_SANDBOX_POINT: preference.sandbox_init_point
+    });
+
   } catch (error: any) {
-    res.status(500).json({ success: false, message: '❌ Error de conexión', error: error.message });
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 
