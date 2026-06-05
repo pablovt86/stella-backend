@@ -19,7 +19,7 @@ const prisma = new PrismaClient();
 
 // Configurar MercadoPago
 mercadopago.configure({
-  access_token: process.env.MP_ACCESS_TOKEN || 'TEST-4325437722170573-052116-2c61f4e15d2cc8c33ea20200b9cbc65a-1770074697'
+  access_token: process.env.MP_ACCESS_TOKEN || 'APP_USR-5415680666046567-051513-708b2b44f187893f7b639ce85e20b7fa-3132601512'
 });
 
 const app = express();
