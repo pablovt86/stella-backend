@@ -315,6 +315,8 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
       }
     });
 
+    console.log(`✅ [DB PRISMA] Turno creado con éxito. ID Cita: ${appointment.id}`);
+
     // ============================================================================
     // FIX DE LOGICA CRÍTICO 2: MERCADOPAGO INTEGRADO EN CREAR-APPOINTMENT
     // EXPLICACIÓN: Se cambia init_point por sandbox_init_point para que el token
@@ -322,14 +324,14 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
     // ============================================================================
     let paymentUrl = '';
     try {
-    const amount = appointment.depositAmount || 0;
-    const preference = {
+      const amount = appointment.depositAmount || 0;
+      const preference = {
         items: [
           {
             title: `Seña Secreta - ${service.name}`,
             quantity: 1,
             currency_id: 'ARS' as any,
-            unit_price: Number(amount)|| 0
+            unit_price: Number(amount) || 0
           }
         ],
         external_reference: appointment.id,
@@ -347,6 +349,10 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
       // ============================================================================
       paymentUrl = mpResponse.body.sandbox_init_point;
 
+      // 🔍 AUDITORÍA DE QA EN VIVO: Miramos qué generó Mercado Pago adentro del bloque
+      console.log('🚀 [MERCADO PAGO EXITOSO] ID de Preferencia:', mpResponse.body.id);
+      console.log('🔗 [MERCADO PAGO EXITOSO] Link de Sandbox:', paymentUrl);
+
       // Dejamos registro del intento de pago en la DB
       await prisma.payment.create({
         data: {
@@ -363,6 +369,15 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
     } catch (mpErr: any) {
       console.error('⚠️ Error al generar Mercado Pago en el webhook directo:', mpErr.message);
     }
+
+    // 🔍 AUDITORÍA DE QA EN VIVO: Inspección final de lo que sale disparado a Botpress
+    console.log('📤 [RESPUESTA A BOTPRESS] JSON enviado final:', JSON.stringify({
+      success: true,
+      appointment: {
+        id: appointment.id,
+        paymentUrl: paymentUrl
+      }
+    }, null, 2));
 
     // Retorno limpio para que la acción de Botpress atrape el link azul
     return res.json({
