@@ -361,13 +361,13 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
         // ============================================================================
         // 🚀 EL COMPLEMENTO DE CONFIGURACIÓN: Le damos identidad al comprador para Sandbox
         // ============================================================================
-       payer: {
-          name: customerName || 'Usuario',
-          surname: 'Prueba',
-          email: 'test_user_12345@testuser.com', // <-- Asegurate de que no tenga espacios alrededor
+        payer: {
+          name: (customerName || 'Cliente').trim(),
+          surname: 'Estudio',
+          email: 'cliente_stella_test@test.com', // <-- Un formato genérico limpio que Sandbox acepta siempre
           phone: {
             area_code: '54',
-            number: Number(customerPhone.replace(/\D/g, '')) || 1100000000 // <-- Forzamos que sea un número puro
+            number: Number(String(customerPhone).replace(/\D/g, '')) || 1111111111
           }
         },
         external_reference: appointment.id,
@@ -375,7 +375,10 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
           success: `${process.env.BACKEND_URL || 'https://stella-backend-n1uo.onrender.com'}/api/payments/success`,
           failure: `${process.env.BACKEND_URL || 'https://stella-backend-n1uo.onrender.com'}/api/payments/failure`
         },
-        auto_return: 'approved'
+        // ============================================================================
+        // 🚀 FIX REDIRECCIÓN: Cambiamos 'approved' por 'all' para que vuelva siempre
+        // ============================================================================
+        auto_return: 'all'
       };
 
       const mpResponse = await (mercadopago as any).preferences.create(preference);
