@@ -190,8 +190,32 @@ app.get('/api/payments/success', (req, res) => {
   res.send('<h1>✅ Pago exitoso!</h1><p>Tu turno ha sido confirmado.</p><a href="https://stella-frontend.onrender.com">Volver a Stella Estudio</a>');
 });
 
-app.get('/api/payments/failure', (req, res) => {
-  res.send('<h1>❌ Pago fallido</h1><p>No se pudo procesar el pago.</p><a href="https://stella-frontend.onrender.com">Intentar de nuevo</a>');
+// 🔍 CAPTURADOR DE ERRORES DE MERCADO PAGO (FALLAS Y REBOTES)
+app.get('/api/payments/failure', async (req, res) => {
+  console.log('⚠️ [WEBHOOK FAILURE MP] El pago fue rechazado o falló.');
+  console.log('🧐 [DATOS DE LA FALLA]:', req.query);
+
+  // Le respondemos algo limpio al navegador para que no se quede colgado
+  return res.send(`
+    <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+      <h2 style="color: #e74c3c;">❌ Pago No Procesado en Sandbox</h2>
+      <p>Mercado Pago rechazó la transacción. Mirá la consola de Render para ver el código de error.</p>
+      <p style="font-size: 14px; color: #7f8c8d;">Status: ${req.query.status} | Detail: ${req.query.status_detail}</p>
+    </div>
+  `);
+});
+
+// 🔍 CAPTURADOR DE PAGOS EXITOSOS (POR SI LLEGA A PASAR)
+app.get('/api/payments/success', async (req, res) => {
+  console.log('🎉 [WEBHOOK SUCCESS MP] ¡El pago entró limpito!');
+  console.log('📦 [DATOS DEL ÉXITO]:', req.query);
+  
+  return res.send(`
+    <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+      <h2 style="color: #2ecc71;">✅ ¡Pago Aprobado con Éxito!</h2>
+      <p>El turno ya quedó confirmado en el sistema.</p>
+    </div>
+  `);
 });
 
 // Webhook de MercadoPago
