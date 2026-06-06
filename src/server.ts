@@ -361,13 +361,13 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
         // ============================================================================
         // 🚀 EL COMPLEMENTO DE CONFIGURACIÓN: Le damos identidad al comprador para Sandbox
         // ============================================================================
-        payer: {
+       payer: {
           name: customerName || 'Usuario',
           surname: 'Prueba',
-          email: 'TESTUSER1169570713120608649', // <-- Poné acá el mail del COMPRADOR de prueba que te dio MP
+          email: 'test_user_12345@testuser.com', // <-- Asegurate de que no tenga espacios alrededor
           phone: {
-            area_code: '549',
-            number: customerPhone || '1100000000'
+            area_code: '54',
+            number: Number(customerPhone.replace(/\D/g, '')) || 1100000000 // <-- Forzamos que sea un número puro
           }
         },
         external_reference: appointment.id,
