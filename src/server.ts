@@ -358,6 +358,18 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
             unit_price: Number(amount) || 0
           }
         ],
+        // ============================================================================
+        // 🚀 EL COMPLEMENTO DE CONFIGURACIÓN: Le damos identidad al comprador para Sandbox
+        // ============================================================================
+        payer: {
+          name: customerName || 'Usuario',
+          surname: 'Prueba',
+          email: 'TESTUSER1169570713120608649', // <-- Poné acá el mail del COMPRADOR de prueba que te dio MP
+          phone: {
+            area_code: '549',
+            number: customerPhone || '1100000000'
+          }
+        },
         external_reference: appointment.id,
         back_urls: {
           success: `${process.env.BACKEND_URL || 'https://stella-backend-n1uo.onrender.com'}/api/payments/success`,
