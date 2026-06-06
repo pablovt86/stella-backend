@@ -322,14 +322,14 @@ app.post('/api/botpress/create-appointment', async (req, res) => {
     // ============================================================================
     let paymentUrl = '';
     try {
-      const amount = appointment.depositAmount;
-      const preference = {
+    const amount = appointment.depositAmount || 0;
+    const preference = {
         items: [
           {
             title: `Seña Secreta - ${service.name}`,
             quantity: 1,
             currency_id: 'ARS' as any,
-            unit_price: amount
+            unit_price: Number(amount)|| 0
           }
         ],
         external_reference: appointment.id,
