@@ -187,7 +187,7 @@ app.get('/api/payments/status/:appointmentId', async (req, res) => {
 });
 
 app.get('/api/payments/success', (req, res) => {
-  res.send('<h1>✅ Pago exitoso!</h1><p>Tu turno ha sido confirmado.</p><a href="https://localhost">Volver a Stella Estudio</a>');
+  res.send('<h1>✅ Pago exitoso!</h1><p>Tu turno ha sido confirmado.</p><a href="http://localhost">Volver a Stella Estudio</a>');
 });
 
 // 🔍 CAPTURADOR DE ERRORES DE MERCADO PAGO (FALLAS Y REBOTES)
