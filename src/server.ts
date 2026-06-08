@@ -28,13 +28,26 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 // CORS
+// 2. CONFIGURACIÓN DE CORS DE ORO: Permitimos tu web de Render y el localhost para probar
+const allowedOrigins = [
+  'https://stella-studio-frontend.onrender.com',
+  'http://localhost:5173', // Por si corrés el front local con Vite
+  'http://localhost:3000'
+];
+
 app.use(cors({
-  origin: ['http://localhost:8080', 'http://localhost:5173', 'http://192.168.1.44:8080', 'http://localhost'],
+  origin: function (origin, callback) {
+    // Permitimos solicitudes sin origen (como Postman o apps móviles) o si están en la lista
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado por políticas de CORS de Stella Estudio'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
 // ==================== ENDPOINTS PÚBLICOS ====================
 
 app.get('/health', (req, res) => {
